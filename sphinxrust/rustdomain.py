@@ -31,8 +31,8 @@ import sphinxrust.formatter as formatter
 import re
 
 
-rust_struct_sig_re = re.compile(r'''^(?P<mods>(?P<pub>.*pub)?)\s(?P<kind>struct|enum)\s(?P<name>[\w]+)$''', re.VERBOSE)
-rust_function_sig_re = re.compile(r'''^(?P<mods>(?P<pub>.*pub)?)?\s?fn\s(?P<name>[\w]+)[(](?P<args>.*)[)](\s[-][>]\s(?P<return>.+))?\s*$''', re.VERBOSE)
+rust_struct_sig_re = re.compile(r'''^((?P<mods>(?P<pub>.*pub)?)\s(?P<kind>struct|enum)\s)?(?P<name>[\w]+)$''', re.VERBOSE)
+rust_function_sig_re = re.compile(r'''^(?P<mods>(?P<pub>.*pub)?)?(\s*fn\s+)?(?P<name>[\w]+)[(](?P<args>.*)[)](\s[-][>]\s(?P<return>.+))?\s*$''', re.VERBOSE)
 rust_arg_re = re.compile(r'''(?P<var>&?\w+(\(\w+(<[^>]+>+)?(,\s*\w+(<[^>]+>+)?)*\))?)([\s:]*(?P<type>&?\w+(<[^>]+>+)?))?''', re.VERBOSE)
 
 class RustXRefRole(XRefRole):
@@ -52,6 +52,11 @@ class RustXRefRole(XRefRole):
             # print("target", target)
             return title, target
 
+
+class RustFuncXRefRole(RustXRefRole):
+    def process_link(self, *args, **kwargs):
+        title, target = super(RustFuncXRefRole, self).process_link(*args, **kwargs)
+        return title + '()', target
 
 class RustUse(Directive):
     """
@@ -162,7 +167,7 @@ class RustFunction(RustObject):
         handle the signature of the directive
         """
 
-        sig_match = rust_function_sig_re.match(sig)
+        sig_match = rust_function_sig_re.match(sig.strip())
         # print('%s -> %s' % (sig, sig_match.groupdict()))
         name = sig_match.group("name")
         mods = sig_match.group("mods")
@@ -170,8 +175,9 @@ class RustFunction(RustObject):
         ret = sig_match.group("return")
 
         # formatted_mods = formatter.output_modifiers(mods).build()
-        signode += nodes.Text(mods + ' ', mods + ' ')
-        signode += nodes.Text('fn ', 'fn ')
+        if mods:
+            signode += nodes.Text(mods + ' ', mods + ' ')
+            signode += nodes.Text('fn ', 'fn ')
 
         # function name
         signode += addnodes.desc_name(name, name)
@@ -217,6 +223,8 @@ class RustStruct(RustObject):
     Description of a rust struct
     """
 
+    kind = 'struct'
+
     doc_field_types = [
         GroupedField('parameter', names=('param',), label=l_('Parameters'))
     ]
@@ -236,10 +244,11 @@ class RustStruct(RustObject):
         sig_match = rust_struct_sig_re.match(sig)
         name = sig_match.group("name")
         mods = sig_match.group("mods")
-        kind = sig_match.group("kind")
+        kind = sig_match.group("kind") or self.kind
 
-        formatted_mods = formatter.output_modifiers(mods).build()
-        signode += nodes.Text(mods + ' ', mods + ' ')
+        if mods:
+            formatted_mods = formatter.output_modifiers(mods).build()
+            signode += nodes.Text(mods + ' ', mods + ' ')
         s = '%s ' % kind
         signode += nodes.Text(s, s)
 
@@ -272,6 +281,8 @@ class RustMember(RustObject):
 
 
 class RustEnum(RustStruct):
+    kind = 'enum'
+
     def get_index_text(self, crate, module, impl, name):
         return _('%s (Rust enum)') % name
 
@@ -382,7 +393,9 @@ class RustDomain(Domain):
         'member': RustXRefRole(),
         'crate': RustXRefRole(),
         'module': RustXRefRole(),
-        'ref': RustXRefRole()
+        'enum': RustXRefRole(),
+        'func': RustFuncXRefRole(),
+        # 'ref': RustXRefRole()
     }
 
     initial_data = {
